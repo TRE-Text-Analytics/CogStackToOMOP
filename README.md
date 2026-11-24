@@ -21,7 +21,7 @@ This guide covers five NiFi 2.7.2 flow definitions. Together they take MIMIC-IV 
 
 ![Data lineage across the five flows](images/lineage.png)
 
-_Grey boxes are data stores, blue boxes are flows built on custom Python processors, and the orange box is the flow built on Groovy scripts._
+_Grey boxes are configurable data stores, blue boxes are flows built on custom Python processors, and the orange box is the flow built on Groovy scripts._
 
 | # | Flow (process group name) | Reads | Writes | Custom components |
 | --- | --- | --- | --- | --- |
