@@ -20,6 +20,15 @@ This guide covers five NiFi 2.7.2 flow definitions. Together they take MIMIC-IV 
 
 _Grey boxes are configurable data stores, blue boxes are flows built on custom Python processors, and the orange box is the flow built on Groovy scripts._
 
+### Atomic and compound NLP entities
+
+The two NLP paths load different kinds of entity into OMOP:
+
+- **Atomic entities (MedCAT: flows 2 → 5).** Each mention is a single concept, such as a SNOMED CT finding, written as one `note_nlp` row. Its meta-annotations become `term_exists` (Y/N) and `term_temporal`. This path writes nothing to the relationship tables.
+- **Compound entities (medspaCy: flows 3 → 4).** A measurement has several parts: the concept (body weight), its value (82) and its unit (kg). Each part is its own `note_nlp` row. A `note_nlp_relationship` row of type `COMPOUND_MEASUREMENT` groups them, with one `note_nlp_relationship_part` row per part giving its role (`component`, `has_measured_value` or `scale_type`). This path also writes atomic rows: BMI mentions (with `value_as_number`), "obesity" mentions, and the derived BMI.
+
+So only flow 4 writes to the relationship tables. To read a compound entity back, join through them (see [Flow 4](#flow-4-load-anthropometrics-to-omop-staging-db)).
+
 | # | Flow (process group name) | Reads | Writes | Custom components |
 | --- | --- | --- | --- | --- |
 | 1 | Ingest binary docs to OpenSearch | `mimiciv_note.discharge_binary`, `mimiciv_note.discharge` | OpenSearch `discharge_summary_document_text`, `discharge_summaries` | 3 Groovy scripts, 1 Avro schema, OCR service |
@@ -324,7 +333,7 @@ _RouteOnAttribute relationships in flow 3: unmatched is terminated. Illustration
 
 ## Flow 4: Load anthropometrics to OMOP staging DB
 
-This flow reads flow 3's index and writes weight, height, BMI and obesity rows into the OMOP staging tables. Each measurement is linked to its value and unit through the relationship tables.
+This flow is the **compound entity** path. It reads flow 3's index and writes weight, height, BMI and obesity rows into the OMOP staging tables. Each weight and height measurement is stored as a compound entity: concept, value and unit rows linked through the relationship tables. BMI and obesity mentions are stored as atomic rows.
 
 ![Flow 4 processor chain](images/flow4.png)
 
@@ -356,9 +365,22 @@ SELECT nlp_system, count(*) FROM omop_temp.note_nlp GROUP BY 1;
 SELECT count(*) FROM omop_temp.note_nlp_relationship;
 ```
 
+To list compound entities with their parts:
+
+```sql
+SELECT r.relationship_id, n.note_id, p.role_source_value,
+       n.lexical_variant, n.value_as_number, n.value_as_string
+FROM omop_temp.note_nlp_relationship r
+JOIN omop_temp.note_nlp_relationship_part p USING (relationship_id)
+JOIN omop_temp.note_nlp n ON n.note_nlp_id = p.note_nlp_id
+WHERE r.relationship_source_value = 'has_finding_attribute'
+ORDER BY r.relationship_id, p.role_source_value
+LIMIT 30;
+```
+
 ## Flow 5: Load mental health mentions to OMOP staging DB
 
-This flow streams MedCAT annotations from OpenSearch and writes one `note_nlp` row per mental health mention. It keeps only the CUIs listed in `cui_filter.txt`.
+This flow is the **atomic entity** path. It streams MedCAT annotations from OpenSearch and writes one `note_nlp` row per mental health mention, with no relationship rows. It keeps only the CUIs listed in `cui_filter.txt`.
 
 ![Flow 5 processor chain](images/flow5.png)
 
@@ -393,4 +415,3 @@ _MedcatNoteNlpLoader properties in flow 5. Illustration, not a screenshot._
 2. Stop and start the loader, so it rereads the file.
 3. If you added CUIs, stop ConsumeElasticsearch, **View State → Clear State**, and start it again. This re-streams older annotations, and Skip Duplicates prevents duplicate rows.
 
-To swap in real screenshots, save each one under the same file name in `images/`. The guide picks it up without further edits.
