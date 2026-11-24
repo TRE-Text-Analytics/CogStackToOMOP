@@ -1,7 +1,5 @@
 # CogStack NiFi 2.0 workflows: setup guide
 
-_Updated 24 Nov 2026_
-
 ## Contents
 
 1. [Overview](#overview)
