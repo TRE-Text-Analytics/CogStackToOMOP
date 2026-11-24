@@ -13,7 +13,6 @@ _Updated 24 Nov 2026_
 7. [Flow 3: Extract Anthropometrics](#flow-3-extract-anthropometrics)
 8. [Flow 4: Load anthropometrics to OMOP staging DB](#flow-4-load-anthropometrics-to-omop-staging-db)
 9. [Flow 5: Load mental health mentions to OMOP staging DB](#flow-5-load-mental-health-mentions-to-omop-staging-db)
-10. [Appendix: about the images](#appendix-about-the-images)
 
 ## Overview
 
@@ -305,7 +304,7 @@ _Drawn from the processor positions and connections in the flow definition. Illu
 3. **ExecuteSQLRecord** (2 tasks) writes one FlowFile per page (Max Rows Per Flow File = 0), as JSON.
 4. **WeightBmiMedspacy 1.0.3** (8 tasks) has Text Field `text`, batch size 50, Emit Only Positive Notes `true` and BMI range 5–90.
 5. **RouteOnAttribute** has `has_records = ${record.count:gt(0)}`. Pages with no positive notes go to `unmatched`, which is terminated, so they're discarded.
-6. **PutElasticsearchRecord** writes to index `anthropometrics_bmi_medspacy_dev`, with ID `/note_id` and Retain Record Path ID Field `true`. `retry` loops back to itself; `failure` and `errors` go to a funnel.
+6. **PutElasticsearchRecord** writes to index `anthropometrics_bmi_medspacy`, with ID `/note_id` and Retain Record Path ID Field `true`. `retry` loops back to itself; `failure` and `errors` go to a funnel.
 
 ![Inside WeightBmiMedspacy](images/diagram-medspacy-pipeline.png)
 
@@ -322,7 +321,7 @@ _RouteOnAttribute relationships in flow 3: unmatched is terminated. Illustration
 **Run:**
 
 1. Start the testing GenerateTableFetch with everything downstream of it.
-2. Check a few documents in `anthropometrics_bmi_medspacy_dev`.
+2. Check a few documents in `anthropometrics_bmi_medspacy`.
 3. Stop the testing GenerateTableFetch and start the main one.
 
 ## Flow 4: Load anthropometrics to OMOP staging DB
@@ -337,8 +336,8 @@ On the canvas after import, before any services are enabled:
 
 _Drawn from the processor positions and connections in the flow definition. Illustration, not a screenshot._
 
-1. **ConsumeElasticsearch** reads index `anthropometrics_bmi_medspacy_dev`, with Range Query Field `note_id.keyword` (ascending), in pages of 500, using scroll pagination and one FlowFile per page. It runs every minute on the primary node, with no Additional Filters.
-2. **OmopNoteNlpLoader 1.0.3** connects to host `samples-db`, database `mimic`, as user `test`, with Target Schema `omop_temp_dev` and Replace Existing Rows `false`. Each page loads in one transaction, and `note_nlp.note_id` is set to the note's `hadm_id`.
+1. **ConsumeElasticsearch** reads index `anthropometrics_bmi_medspacy`, with Range Query Field `note_id.keyword` (ascending), in pages of 500, using scroll pagination and one FlowFile per page. It runs every minute on the primary node, with no Additional Filters.
+2. **OmopNoteNlpLoader 1.0.3** connects to host `samples-db`, database `mimic`, as user `test`, with Target Schema `omop_temp` and Replace Existing Rows `false`. Each page loads in one transaction, and `note_nlp.note_id` is set to the note's `hadm_id`.
 
 ![What OmopNoteNlpLoader writes for one measurement](images/diagram-omop-relationships.png)
 
@@ -355,8 +354,8 @@ _ConsumeElasticsearch → View State, with Clear State. Illustration, not a scre
 **Check the result:**
 
 ```sql
-SELECT nlp_system, count(*) FROM omop_temp_dev.note_nlp GROUP BY 1;
-SELECT count(*) FROM omop_temp_dev.note_nlp_relationship;
+SELECT nlp_system, count(*) FROM omop_temp.note_nlp GROUP BY 1;
+SELECT count(*) FROM omop_temp.note_nlp_relationship;
 ```
 
 ## Flow 5: Load mental health mentions to OMOP staging DB
@@ -373,7 +372,7 @@ _Drawn from the processor positions and connections in the flow definition. Illu
 
 1. **ConsumeElasticsearch** reads index `trext_medcat_annotations`, with Range Query Field `timestamp` (ascending) and Additional Filters `[{"range": {"timestamp": {"lt": "now-2m"}}}]`, which skips annotations less than 2 minutes old. It reads pages of **2,000** using scroll pagination, one FlowFile per page, and runs every 30 seconds on the primary node.
 2. **MedcatNoteNlpLoader 1.2.0** is configured as follows:
-   - Target Schema `omop_temp_dev`, Note Lookup Table `mimiciv_note.discharge`, NLP System `MedCAT-v2-Snomed2025-MIMIC_IV`.
+   - Target Schema `omop_temp`, Note Lookup Table `mimiciv_note.discharge`, NLP System `MedCAT-v2-Snomed2025-MIMIC_IV`.
    - CUI Filter Mode `File`, with CUI Filter File `/opt/nifi/user_scripts/cui_filter.txt`. This is the only place the CUI filter is set.
    - The default Meta-annotation Rules, Default term_exists `Y`, and Skip Duplicates `true`.
 
@@ -395,13 +394,3 @@ _MedcatNoteNlpLoader properties in flow 5. Illustration, not a screenshot._
 1. Update `cui_filter.txt` in the container.
 2. Stop and start the loader, so it rereads the file.
 3. If you added CUIs, stop ConsumeElasticsearch, **View State → Clear State**, and start it again. This re-streams older annotations, and Skip Duplicates prevents duplicate rows.
-
-## Appendix: about the images
-
-All images are in `images/` and were generated, not captured from a running NiFi:
-
-- **`flow1.png` … `flow5.png`, `lineage.png` and `diagram-*.png`** are explanatory diagrams.
-- **`canvas-flow*.png`** are drawn from each flow definition's processor positions, connections, funnels and labels. The layout matches what you'll see after import; the counters are zero.
-- **`ui-*.png`** are illustrations of NiFi dialogs, filled in with the values from the flow definitions. NiFi's own styling differs a little.
-
-To swap in real screenshots, save each one under the same file name in `images/`. The guide picks it up without further edits.
