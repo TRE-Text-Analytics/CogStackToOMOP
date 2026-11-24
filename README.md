@@ -17,7 +17,7 @@ _Updated 24 Nov 2026_
 
 ## Overview
 
-This guide covers five NiFi 2.7.2 flow definitions. Together they take MIMIC-IV discharge notes from Postgres, index them in OpenSearch, run two NLP pipelines (MedCAT and medspaCy), and load the results into the OMOP staging schema `omop_temp_dev`. Four of the flows use custom Python processors (five in total), and flow 1 uses three Groovy scripts. None of these files are inside the flow definitions, so they must be installed before you import.
+This guide covers five NiFi 2.7.2 flow definitions. Together they take MIMIC-IV discharge notes from Postgres, index them in OpenSearch, run two NLP pipelines (MedCAT and medspaCy), and load the results into the OMOP staging schema `omop_temp`. Four of the flows use custom Python processors (five in total), and flow 1 uses three Groovy scripts. None of these files are inside the flow definitions, so they must be installed before you import.
 
 ![Data lineage across the five flows](images/lineage.png)
 
@@ -27,9 +27,9 @@ _Grey boxes are configurable data stores, blue boxes are flows built on custom P
 | --- | --- | --- | --- | --- |
 | 1 | Ingest binary docs to OpenSearch | `mimiciv_note.discharge_binary`, `mimiciv_note.discharge` | OpenSearch `discharge_summary_document_text`, `discharge_summaries` | 3 Groovy scripts, 1 Avro schema, OCR service |
 | 2 | Ingest annotations to OpenSearch - Refined | `mimiciv_note.discharge` | OpenSearch `trext_medcat_annotations` | `CogStackPrepareRecordForNlp`, `CogStackParseCogStackServiceResult` (0.0.1), MedCAT service |
-| 3 | Extract Anthropometrics | `mimiciv_note.discharge` | OpenSearch `anthropometrics_bmi_medspacy_dev` | `WeightBmiMedspacy` 1.0.3 |
-| 4 | Load anthropometrics to OMOP staging DB | OpenSearch `anthropometrics_bmi_medspacy_dev` | `omop_temp_dev.note_nlp` + relationship tables | `OmopNoteNlpLoader` 1.0.3 |
-| 5 | Load mental health mentions to OMOP staging DB | OpenSearch `trext_medcat_annotations` | `omop_temp_dev.note_nlp` | `MedcatNoteNlpLoader` 1.2.0, `cui_filter.txt` |
+| 3 | Extract Anthropometrics | `mimiciv_note.discharge` | OpenSearch `anthropometrics_bmi_medspacy` | `WeightBmiMedspacy` 1.0.3 |
+| 4 | Load anthropometrics to OMOP staging DB | OpenSearch `anthropometrics_bmi_medspacy` | `omop_temp.note_nlp` + relationship tables | `OmopNoteNlpLoader` 1.0.3 |
+| 5 | Load mental health mentions to OMOP staging DB | OpenSearch `trext_medcat_annotations` | `omop_temp.note_nlp` | `MedcatNoteNlpLoader` 1.2.0, `cui_filter.txt` |
 
 **Run order.** Flow 4 needs flow 3's index, and flow 5 needs flow 2's annotations. Flow 1 is independent. Set up in this order:
 
@@ -49,10 +49,10 @@ The flows were exported from NiFi **2.7.2** running in the CogStack NiFi contain
   - `cogstack-medcat-service-production:5000` (MedCAT, flow 2)
 - [ ] **The OpenSearch certificates are at the same path inside the container:** `/security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/`. That folder holds `elasticsearch-1-keystore.jks` and `elasticsearch-1-truststore.key` (a JKS file despite its name). You'll also need the keystore, key and truststore passwords.
 - [ ] **Credentials are to hand:** Postgres user `test`, OpenSearch user `admin`, and their passwords. Flow definitions never contain passwords.
-- [ ] **The OMOP staging DB has been initialised.** Its initialisation scripts create `note_nlp`, `note_nlp_relationship` and `note_nlp_relationship_part` in `omop_temp_dev`, with `note_nlp_concept_id` and `note_nlp_source_concept_id` as `bigint`. They also create the index the loaders use for their duplicate check:
+- [ ] **The OMOP staging DB has been initialised.** Its initialisation scripts create `note_nlp`, `note_nlp_relationship` and `note_nlp_relationship_part` in `omop_temp`, with `note_nlp_concept_id` and `note_nlp_source_concept_id` as `bigint`. They also create the index the loaders use for their duplicate check:
 
   ```sql
-  CREATE INDEX IF NOT EXISTS note_nlp_note_system_idx ON omop_temp_dev.note_nlp (note_id, nlp_system);
+  CREATE INDEX IF NOT EXISTS note_nlp_note_system_idx ON omop_temp.note_nlp (note_id, nlp_system);
   ```
 
   If your database was initialised before the index was added to the scripts, run the statement once by hand. It's safe to re-run (`IF NOT EXISTS`).
