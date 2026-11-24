@@ -1,7 +1,5 @@
 # CogStack NiFi 2.0 workflows: setup guide
 
-_Updated 24 Nov 2026_
-
 ## Contents
 
 1. [Overview](#overview)
@@ -13,7 +11,6 @@ _Updated 24 Nov 2026_
 7. [Flow 3: Extract Anthropometrics](#flow-3-extract-anthropometrics)
 8. [Flow 4: Load anthropometrics to OMOP staging DB](#flow-4-load-anthropometrics-to-omop-staging-db)
 9. [Flow 5: Load mental health mentions to OMOP staging DB](#flow-5-load-mental-health-mentions-to-omop-staging-db)
-10. [Appendix: about the images](#appendix-about-the-images)
 
 ## Overview
 
@@ -395,13 +392,5 @@ _MedcatNoteNlpLoader properties in flow 5. Illustration, not a screenshot._
 1. Update `cui_filter.txt` in the container.
 2. Stop and start the loader, so it rereads the file.
 3. If you added CUIs, stop ConsumeElasticsearch, **View State → Clear State**, and start it again. This re-streams older annotations, and Skip Duplicates prevents duplicate rows.
-
-## Appendix: about the images
-
-All images are in `images/` and were generated, not captured from a running NiFi:
-
-- **`flow1.png` … `flow5.png`, `lineage.png` and `diagram-*.png`** are explanatory diagrams.
-- **`canvas-flow*.png`** are drawn from each flow definition's processor positions, connections, funnels and labels. The layout matches what you'll see after import; the counters are zero.
-- **`ui-*.png`** are illustrations of NiFi dialogs, filled in with the values from the flow definitions. NiFi's own styling differs a little.
 
 To swap in real screenshots, save each one under the same file name in `images/`. The guide picks it up without further edits.
