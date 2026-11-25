@@ -14,7 +14,7 @@
 
 ## Overview
 
-This guide covers five NiFi 2.7.2 flow definitions. Together they take MIMIC-IV discharge notes from Postgres, index them in OpenSearch, run two NLP pipelines (MedCAT and medspaCy), and load the results into the OMOP staging schema `omop_temp`. Four of the flows use custom Python processors (five in total), and flow 1 uses three Groovy scripts. None of these files are inside the flow definitions, so they must be installed before you import.
+This guide covers five NiFi 2.7.2 flow definitions. Together they take MIMIC-IV discharge notes from Postgres, index them in one OpenSearch index (`discharge_summaries`), run two NLP pipelines over that index (MedCAT and medspaCy), and load the results into the OMOP staging schema `omop_temp`. Four of the flows use custom Python processors (five in total), and flow 1 uses three Groovy scripts. None of these files are inside the flow definitions, so they must be installed before you import.
 
 ![Data lineage across the five flows](images/lineage.png)
 
@@ -31,25 +31,28 @@ So only flow 4 writes to the relationship tables. To read a compound entity back
 
 | # | Flow (process group name) | Reads | Writes | Custom components |
 | --- | --- | --- | --- | --- |
-| 1 | Ingest binary docs to OpenSearch | `mimiciv_note.discharge_binary`, `mimiciv_note.discharge` | OpenSearch `discharge_summary_document_text`, `discharge_summaries` | 3 Groovy scripts, 1 Avro schema, OCR service |
-| 2 | Ingest annotations to OpenSearch - Refined | `mimiciv_note.discharge` | OpenSearch `trext_medcat_annotations` | `CogStackPrepareRecordForNlp`, `CogStackParseCogStackServiceResult` (0.0.1), MedCAT service |
-| 3 | Extract Anthropometrics | `mimiciv_note.discharge` | OpenSearch `anthropometrics_bmi_medspacy` | `WeightBmiMedspacy` 1.0.3 |
+| 1 | Ingest binary docs to OpenSearch | `mimiciv_note.discharge_binary` (PDF/DOCX), `mimiciv_note.discharge` | OpenSearch `discharge_summaries` (both sources, one document per `note_id`) | 3 Groovy scripts, 1 Avro schema, OCR service |
+| 2 | Ingest annotations to OpenSearch - Refined | OpenSearch `discharge_summaries` | OpenSearch `trext_medcat_annotations` | `CogStackPrepareRecordForNlp`, `CogStackParseCogStackServiceResult` (0.0.1), MedCAT service |
+| 3 | Extract Anthropometrics | OpenSearch `discharge_summaries` | OpenSearch `anthropometrics_bmi_medspacy` | `WeightBmiMedspacy` 1.0.3 |
 | 4 | Load anthropometrics to OMOP staging DB | OpenSearch `anthropometrics_bmi_medspacy` | `omop_temp.note_nlp` + relationship tables | `OmopNoteNlpLoader` 1.0.3 |
-| 5 | Load mental health mentions to OMOP staging DB | OpenSearch `trext_medcat_annotations` | `omop_temp.note_nlp` | `MedcatNoteNlpLoader` 1.2.0, `cui_filter.txt` |
+| 5 | Load mental health mentions to OMOP staging DB | OpenSearch `trext_medcat_annotations` | `omop_temp.note_nlp` | `MedcatNoteNlpLoader` 1.3.0, `cui_filter.txt` |
 
-**Run order.** Flow 4 needs flow 3's index, and flow 5 needs flow 2's annotations. Flow 1 is independent. Set up in this order:
+**Run order.** Flows 2 and 3 read flow 1's index, flow 4 reads flow 3's, and flow 5 reads flow 2's. Set up in this order:
 
 1. Install the external files.
 2. Import all five flows.
-3. Start flows 1, 2 and 3.
-4. Start flows 4 and 5 once their source indexes have data.
+3. Start flow 1.
+4. Start flows 2 and 3 once `discharge_summaries` has data.
+5. Start flows 4 and 5 once their source indexes have data.
+
+The flows keep running side by side after that. Each one picks up what the flow before it has added or replaced since its last run (see [How the flows read incrementally](#how-the-flows-read-incrementally)).
 
 ## Before you start
 
 The flows were exported from NiFi **2.7.2** running in the CogStack NiFi container (`cogstack-nifi`). Import them into the same NiFi version. A different 2.x version usually works, but the standard processors may show version warnings until you change them.
 
 - [ ] **These hostnames resolve from the NiFi container:**
-  - `samples-db:5432` (Postgres, database `mimic`)
+  - `samples-db:5432` (Postgres, database `mimic`: flow 1 reads it, flows 4 and 5 write to it)
   - `elasticsearch-1:9200` and `elasticsearch-2:9200` (OpenSearch, HTTPS)
   - `ocr-service:8090` (Tika OCR, flow 1)
   - `cogstack-medcat-service-production:5000` (MedCAT, flow 2)
@@ -63,6 +66,7 @@ The flows were exported from NiFi **2.7.2** running in the CogStack NiFi contain
 
   If your database was initialised before the index was added to the scripts, run the statement once by hand. It's safe to re-run (`IF NOT EXISTS`).
 
+- [ ] **`mimiciv_note.discharge_binary` exists and holds complete documents.** Create it with `discharge_binary.sql` (or include that file in the databank's schema scripts), then fill it with `generate_mimic_iv_binary_samples.ipynb`: set `MODE = "new_sample"` and run all cells. The notebook writes each note as a multi-page PDF or a DOCX.
 - [ ] **Python 3.11 is in the container**, which the CogStack image provides. The NumPy pin in `WeightBmiMedspacy` assumes 3.11.
 
 ## Installing the external files
@@ -73,14 +77,16 @@ A flow definition records only the *paths* and *processor versions* it uses, not
 | --- | --- | --- |
 | `weight_and_bmi_medspacy_extraction.py` (processor `WeightBmiMedspacy` **1.0.3**) | Flow 3 | `/opt/nifi/nifi-current/python_extensions/` |
 | `omop_note_nlp_loader.py` (processor `OmopNoteNlpLoader` **1.0.3**) | Flow 4 | `/opt/nifi/nifi-current/python_extensions/` |
-| `medcat_omop_note_nlp_loader.py` (processor `MedcatNoteNlpLoader` **1.2.0**) | Flow 5 | `/opt/nifi/nifi-current/python_extensions/` |
+| `medcat_omop_note_nlp_loader.py` (processor `MedcatNoteNlpLoader` **1.3.0**) | Flow 5 | `/opt/nifi/nifi-current/python_extensions/` |
 | `CogStackPrepareRecordForNlp`, `CogStackParseCogStackServiceResult` (**0.0.1**) | Flow 2 | Ship with the CogStack NiFi image. If missing, copy them from the CogStack-NiFi repository into the same folder. |
 | `prepare-db-record-for-tika-request-single-mimic.groovy` | Flow 1 | `/opt/nifi/user_scripts/` |
 | `parse-tika-response-single-mimic.groovy` | Flow 1 | `/opt/nifi/user_scripts/` |
 | `parse-tika-result-json-to-avro-mimic.groovy` | Flow 1 | `/opt/nifi/user_scripts/` |
 | `document-mimic.avsc` (Avro schema) | Flow 1 | `/opt/nifi/user_schemas/` |
 | `cui_filter.txt` | Flow 5 | `/opt/nifi/user_scripts/` |
-| `postgresql-42.7.7.jar` (JDBC driver) | Flows 1, 2, 3 | `/opt/nifi/drivers/` |
+| `postgresql-42.7.7.jar` (JDBC driver) | Flow 1 | `/opt/nifi/drivers/` |
+
+**Flow 1's scripts and schema must be the combined-output versions** (November 2026). They write the same fields as `mimiciv_note.discharge`, plus the OCR metadata. Older versions write `doc_id` and `doc_text` and fail with the current flow. These files, `discharge_binary.sql` and the sample generator notebook are in the `files/` folder next to this guide, together with `medcat_omop_note_nlp_loader.py` 1.3.0 for flow 5.
 
 **File names and processor names differ.** NiFi identifies a Python processor by the class name inside the file (`WeightBmiMedspacy`, `OmopNoteNlpLoader`, `MedcatNoteNlpLoader`), not by the file name. That class name is what you search for in the Add Processor dialog and what the flow definitions refer to. It's also the name of each processor's dependency folder under `/opt/nifi/user_scripts/extensions/`. Keep exactly one file per processor in the extensions folder. If a renamed copy and an old copy both define the same class, NiFi lists the processor twice.
 
@@ -138,9 +144,9 @@ Watch progress with:
 docker exec cogstack-nifi tail -f /opt/nifi/nifi-current/logs/nifi-app.log
 ```
 
-![Add Processor dialog filtered to "Medcat", showing MedcatNoteNlpLoader 1.2.0](images/ui-add-processor-search.png)
+![Add Processor dialog filtered to "Medcat", showing MedcatNoteNlpLoader 1.3.0](images/ui-add-processor-search.png)
 
-_Add Processor dialog filtered to "Medcat", showing MedcatNoteNlpLoader 1.2.0. Illustration, not a screenshot._
+_Add Processor dialog filtered to "Medcat", showing MedcatNoteNlpLoader 1.3.0. Illustration, not a screenshot._
 
 ### Versions must match
 
@@ -174,18 +180,19 @@ Repeat these steps for each JSON file.
 
    | Service or processor | Blank sensitive properties | In flows |
    | --- | --- | --- |
-   | StandardSSLContextService | Keystore Password, Key Password, Truststore Password | 1 (two copies), 2 (two copies), 3, 4, 5 |
+   | StandardSSLContextService | Keystore Password, Key Password, Truststore Password | 1 (two copies), 2, 3, 4, 5 |
    | ElasticSearchClientServiceImpl | Password (user `admin`) | 1, 2, 3, 4, 5 |
-   | DBCPConnectionPool | Password (user `test`) | 1 (top group and the "Ingest free-text documents from DB" subgroup), 2, 3 |
+   | DBCPConnectionPool | Password (user `test`) | 1 (top group and the "Ingest free-text documents from DB" subgroup) |
    | `OmopNoteNlpLoader` / `MedcatNoteNlpLoader` processor | Database Password | 4 / 5 |
 
    ![Controller Services in flow 3 straight after import, before passwords are entered](images/ui-controller-services.png)
 
    _Controller Services in flow 3 straight after import, before passwords are entered. Illustration, not a screenshot._
 
-3. **Enable the services.** Enable each SSL Context Service first, because the Elasticsearch client depends on it. Then enable the Elasticsearch client, the DBCP pool and the record readers and writers. Every processor should now show a red stop square, not a yellow warning.
+3. **Enable the services.** Enable each SSL Context Service first, because the Elasticsearch client depends on it. Then enable the Elasticsearch client, any DBCP pool and the record readers and writers. Every processor should now show a red stop square, not a yellow warning.
 4. **Check the Python processors.** A processor that shows as missing or ghosted means its `.py` file isn't installed, or is installed at a different version (see [Versions must match](#versions-must-match)).
 5. **Don't start anything yet.** Each flow's section below lists what to check first. Imported processors start with no state, so GenerateTableFetch and ConsumeElasticsearch read their sources from the beginning.
+6. **Check the index names.** Each flow writes to, or reads from, the index names in the table in the [Overview](#overview). If you test with temporary names (for example `trext_medcat_annotations_dev`), change the reading flow to match, and switch both back before the full run.
 
 **With or without external services.** If a flow was exported *with* external services, it brings its own copy of "ElasticSearchClientServiceImpl - CogStack ES cluster" and its SSL Context Service. Importing several flows like that leaves several copies, and a password change then means updating each one. To keep a single copy:
 
@@ -203,39 +210,73 @@ Each flow's first processor keeps a checkpoint in NiFi state, so it reads only w
 
 ![How each flow remembers where it got to](images/diagram-incremental-reading.png)
 
+Flows 2 and 3 track `indexed_at`, which flow 1 stamps on every document it writes. A note that flow 1 replaces (for example, the OCR version replacing the free-text one) gets a new `indexed_at`, so flows 2 and 3 process it again and overwrite their output for that note. If the new text gives a note fewer MedCAT annotations than before, the extra old annotations stay in `trext_medcat_annotations`.
+
+**Testing on a few patients.** To try flows 2 and 3 on a small subset first, add a second filter to Additional Filters on their ConsumeElasticsearch processors. For example, this reads about 0.1% of patients:
+
+```json
+[{"range": {"indexed_at": {"lt": "now-5m"}}}, {"range": {"subject_id": {"lt": 10010000}}}]
+```
+
+When the test is done, set Additional Filters back to the indexed_at filter alone, then **View State → Clear State** and start the processor again.
+
 **About the failure funnels.** Every flow sends failures to funnels with no outgoing connection, so failed FlowFiles wait there for you to inspect. Those queues have back pressure too (10,000 FlowFiles by default), and if one fills up, the processor feeding it stops. Check them now and then: inspect or replay what's there, then right-click the connection → **Empty Queue**.
 
 ## Flow 1: Ingest binary docs to OpenSearch
 
-This flow sends each binary discharge document through the Tika OCR service and indexes the extracted text. A subgroup also copies the free-text notes into OpenSearch unchanged.
+This flow loads every discharge note into one OpenSearch index, `discharge_summaries`, from two sources: binary documents (PDF and DOCX) that go through the Tika OCR service, and the free-text notes copied as they are. Both write one document per `note_id` with the same fields, so flows reading the index don't need to know where a note came from.
 
 ![Flow 1 processor chain](images/flow1.png)
 
-On the canvas after import, before any services are enabled:
+The group holds two subgroups and the shared services (Elasticsearch client, SSL context, Avro reader and writer, DBCP pool):
 
-![Flow 1 on the NiFi canvas](images/canvas-flow1.png)
+![Flow 1 top level on the NiFi canvas](images/canvas-flow1.png)
 
 _Drawn from the processor positions and connections in the flow definition. Illustration, not a screenshot._
 
-Inside the "Ingest free-text documents from DB" subgroup:
+**Subgroup "Ingest binary docs to OpenSearch" (OCR):**
 
-![Flow 1 subgroup on the NiFi canvas](images/canvas-flow1-subgroup.png)
+![Flow 1 OCR subgroup on the NiFi canvas](images/canvas-flow1-ocr.png)
 
-**Main chain** (top level of the group):
+1. **GenerateTableFetch - MIMIC Notes** reads `mimiciv_note.discharge_binary` (`note_id, subject_id, hadm_id, note_type, note_seq, charttime, storetime, file_mime, file_data`) in pages of 3,000. Its checkpoint is the maximum `charttime`, and pages are partitioned on `hadm_id`.
+2. **ExecuteSQLRecord** (5 tasks) writes one row per FlowFile, as Avro. The scripts need exactly one record per FlowFile, so keep Max Rows Per Flow File at `1`.
+3. **ExecuteScript - PrepareTikaContent** runs `prepare-db-record-for-tika-request-single-mimic.groovy`, with one property, `binary_field = file_data`. The document bytes become the FlowFile content, and every other column is kept as an attribute named `src.<column>`.
+4. **InvokeHTTP - QueryTika** (2 tasks) sends `POST http://ocr-service:8090/api/process`, with a 600-second read timeout. `Retry` loops back to itself; `No Retry` and `Failure` go to a funnel.
+5. **ExecuteScript - ParseTikaResponse** runs `parse-tika-response-single-mimic.groovy`. It combines the OCR text with the `src.*` columns.
+6. **ExecuteGroovyScript - ConvertJsonToAvro** runs `parse-tika-result-json-to-avro-mimic.groovy` with the schema `/opt/nifi/user_schemas/document-mimic.avsc`. The record has the free-text fields (`note_id` … `text`, with the OCR text in `text`) plus `processing_timestamp` and `metadata_*` (content type, page count, OCR confidence, elapsed time).
+7. **UpdateRecord** adds `indexed_at`, the current time in UTC: `${now():format("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", "GMT")}`, using the shared Avro reader and writer.
+8. **PutElasticsearchRecord** writes to `discharge_summaries`, ID `/note_id`, in batches of 100.
 
-1. **GenerateTableFetch - MIMIC Notes** reads `mimiciv_note.discharge_binary` (`hadm_id, note_id, subject_id, charttime, storetime, file_data`) in pages of 3,000. Its checkpoint is the maximum `charttime`, and pages are partitioned on `hadm_id`.
-2. **ExecuteSQLRecord** (5 tasks) writes one row per FlowFile, as Avro.
-3. **ExecuteScript - PrepareTikaContent** runs `prepare-db-record-for-tika-request-single-mimic.groovy`. Its dynamic properties map the columns: `binary_field = file_data`, `document_id_field = hadm_id` and `document_date = charttime`, plus `note_id` and `subject_id`.
-4. **InvokeHTTP - QueryTika** sends `POST http://ocr-service:8090/api/process`, with a 600-second read timeout. `Retry` loops back to itself; `No Retry` and `Failure` go to a funnel.
-5. **ExecuteScript - ParseTikaResponse** runs `parse-tika-response-single-mimic.groovy`.
-6. **ExecuteGroovyScript - ConvertJsonToAvro** runs `parse-tika-result-json-to-avro-mimic.groovy`, using the schema at `/opt/nifi/user_schemas/document-mimic.avsc`.
-7. **PutElasticsearchRecord** writes to index `discharge_summary_document_text`, with the document ID taken from `/doc_id`.
+**Subgroup "Ingest free-text documents from DB":**
 
-**Subgroup "Ingest free-text documents from DB":** GenerateTableFetch on `mimiciv_note.discharge` (pages of 5,000, checkpoint `charttime`) → ExecuteSQLRecord → PutElasticsearchRecord into `discharge_summaries`, ID `/note_id`. It uses the parent group's Avro reader and writer, so keep it inside this group.
+![Flow 1 free-text subgroup on the NiFi canvas](images/canvas-flow1-subgroup.png)
+
+GenerateTableFetch on `mimiciv_note.discharge` (pages of 5,000, checkpoint `charttime`) → ExecuteSQLRecord (one FlowFile per page) → UpdateRecord (`indexed_at`, as above) → PutElasticsearchRecord into `discharge_summaries`, ID `/note_id`, in batches of 200. It has its own DBCP pool and uses the parent group's Avro reader and writer.
+
+**Both PutElasticsearchRecord processors** use the same relationship settings:
+
+| Relationship | Setting |
+| --- | --- |
+| `successful`, `original` | Terminate |
+| `failure`, `errors` | To the failure funnel. Nothing is ticked under Retry, because a rejected document is rejected again. |
+| `retry` | Back to **UpdateRecord**, so documents wait out an OpenSearch outage and are stamped again on each attempt |
+
+Log Error Responses is on, so rejected documents appear in `nifi-app.log` with OpenSearch's reason.
+
+**`indexed_at`** is how flows 2 and 3 find new and replaced documents: their ConsumeElasticsearch reads documents with an `indexed_at` later than the last one it saw. Each write stamps the time again, including retries. OpenSearch maps the field as a date the first time it sees it. Documents written before this field existed have no `indexed_at`; reload them by clearing the state of both GenerateTableFetch processors. To check the field:
+
+```bash
+curl -k -u admin:<password> "https://elasticsearch-1:9200/discharge_summaries/_count?q=NOT%20_exists_:indexed_at"   # should be 0
+```
+
+**One document per note.** A note in both tables is written twice with the same `note_id`, and the later write replaces the earlier one. The OCR branch is slower, so for notes in both tables the OCR version usually ends up in the index. To see which source a document came from, check for OCR fields:
+
+```bash
+curl -k -u admin:<password> "https://elasticsearch-1:9200/discharge_summaries/_count?q=_exists_:processing_timestamp"
+```
 
 **Before starting:**
 
-- [ ] **Delete the empty subgroup**, also named "Ingest binary docs to OpenSearch". It contains nothing.
 - [ ] **Set Run Schedule on both GenerateTableFetch processors**, for example to `1 min`. At `0 sec` they query Postgres continuously, even when nothing has changed.
 - [ ] **Check the OCR service responds.** This should print a status code, not a connection error:
 
@@ -243,19 +284,22 @@ Inside the "Ingest free-text documents from DB" subgroup:
   docker exec cogstack-nifi curl -s -o /dev/null -w '%{http_code}\n' http://ocr-service:8090/
   ```
 
-- [ ] **Route failures instead of dropping them.** GenerateTableFetch `failure`, the top-level ExecuteSQLRecord `failure`, and PutElasticsearchRecord `errors` (after retries) are auto-terminated, which silently discards them. Send them to a funnel instead.
-- [ ] **Ignore the canvas label about "Restart On Finish?".** No processor in this flow has that property; the label is left over from an older version.
+- [ ] **Consider Output Batch Size `100`** on the OCR ExecuteSQLRecord, so Tika starts on documents while the rest of the page is still being read.
+- [ ] **Route the OCR ExecuteSQLRecord's `failure` to a funnel.** It's auto-terminated, which silently discards it.
 
-**Run:** start the subgroup and the main chain. Check progress with:
+**Run:** start both subgroups. Check progress with:
 
 ```bash
-curl -k -u admin:<password> https://elasticsearch-1:9200/discharge_summary_document_text/_count
 curl -k -u admin:<password> https://elasticsearch-1:9200/discharge_summaries/_count
 ```
 
+**Rebuilding the binary documents.** After `generate_mimic_iv_binary_samples.ipynb` rewrites `discharge_binary`, stop **GenerateTableFetch - MIMIC Notes**, **View State → Clear State**, and start it again. The rows keep their `charttime`, so without clearing state the flow won't read them.
+
+**If OpenSearch drops connections** (`Connection reset` in the bulletins), the bulk requests are too large for its heap. Lower Batch Size, run one task, and check the node with `_cat/nodes?v&h=name,heap.percent,heap.max`. Then replay the failure funnel by connecting it to **UpdateRecord**, so replayed documents get a fresh `indexed_at`, until it empties. Documents are written by `note_id`, so a replay never duplicates them.
+
 ## Flow 2: Ingest annotations to OpenSearch - Refined
 
-This flow sends discharge notes to the MedCAT service in bulk and indexes one OpenSearch document per annotation, keyed by `annotation_id`.
+This flow reads discharge notes from `discharge_summaries`, sends them to the MedCAT service in bulk, and indexes one OpenSearch document per annotation, keyed by `annotation_id`.
 
 ![Flow 2 processor chain](images/flow2.png)
 
@@ -265,18 +309,34 @@ On the canvas after import, before any services are enabled:
 
 _Drawn from the processor positions and connections in the flow definition. Illustration, not a screenshot._
 
-1. **GenerateTableFetch - MIMIC Notes** reads `mimiciv_note.discharge` as `note_id AS id, text`, in pages of 3,000 partitioned on `hadm_id`. Its checkpoint is the maximum `charttime`.
-2. **ExecuteSQLRecord** (5 tasks) writes one FlowFile per page (Max Rows Per Flow File = 0), as a JSON array.
-3. **CogStackPrepareRecordForNlp** (25 tasks) builds the MedCAT request from `id` and `text`.
-4. **InvokeHTTP** sends `POST http://cogstack-medcat-service-production:5000/api/process_bulk`, with 600-second timeouts. Any failure goes to a **second InvokeHTTP** for one more attempt; that one's failures go to a funnel.
-5. **CogStackParseCogStackServiceResult** (`service_message_type = medcat`) parses the MedCAT response. As with InvokeHTTP, failures get a second attempt in a duplicate processor.
-6. **SplitJson** (`$.*`) splits the result into one FlowFile per annotation.
-7. **EvaluateJsonPath** (80 tasks) copies `$.annotation_id` into an attribute.
-8. **PutElasticsearchJson** writes to index `trext_medcat_annotations`, with the document ID taken from the `annotation_id` attribute, in batches of 10,000.
+1. **ConsumeElasticsearch** reads `discharge_summaries` with these settings. It runs every minute on the primary node, and its `aggregations` and `retry` relationships are terminated (it has no FlowFile to retry); `failure` goes to a funnel.
+
+   | Property | Value |
+   | --- | --- |
+   | Client Service | ElasticSearchClientServiceImpl - CogStack ES cluster |
+   | Index | `discharge_summaries` |
+   | Range Query Field / Sort Order | `indexed_at` / `asc` |
+   | Additional Filters | `[{"range": {"indexed_at": {"lt": "now-5m"}}}]` |
+   | Size | `1000` |
+   | Pagination Type | scroll (`pagination-scroll`) |
+   | Search Results Split | per response (`splitUp-no`): one FlowFile per page |
+   | Search Results Format | Source only (`SOURCE_ONLY`): each FlowFile is a JSON array of notes |
+
+2. **CogStackPrepareRecordForNlp** (25 tasks) builds the MedCAT request: `document_id_field_name = note_id`, `document_text_field_name = text`, `process_flow_file_type = json`.
+3. **InvokeHTTP** sends `POST http://cogstack-medcat-service-production:5000/api/process_bulk`, with 600-second timeouts. Any failure goes to a **second InvokeHTTP** for one more attempt; that one's failures go to a funnel.
+4. **CogStackParseCogStackServiceResult** (`service_message_type = medcat`, `document_id_field_name = note_id`) parses the MedCAT response. As with InvokeHTTP, failures get a second attempt in a duplicate processor.
+5. **SplitJson** (`$.*`) splits the result into one FlowFile per annotation.
+6. **EvaluateJsonPath** (80 tasks) copies `$.annotation_id` into an attribute.
+7. **PutElasticsearchJson** writes to index `trext_medcat_annotations`, with the document ID taken from the `annotation_id` attribute and Index Operation `index`. `retry` loops back to itself; `failure` and `errors` go to a funnel.
+
+**What each annotation contains.** The parser copies every field of the source note except `text` into each annotation, so annotations carry `note_id`, `subject_id`, `hadm_id`, `charttime` and the rest alongside MedCAT's own fields (`cui`, `pretty_name`, `start`, `end`, `meta_anns`, `timestamp` and so on). `annotation_id` is `<note_id>_<n>`, so reprocessing a note overwrites its annotations rather than duplicating them. Flow 5 takes `hadm_id` straight from the annotation.
+
+**All three CogStack processors must use `note_id`.** If any is left at `id` (the setting when the flow read from Postgres), annotation IDs no longer match the note, and the parser can't find the document it's parsing.
 
 **Before starting:**
 
-- [ ] **Check the index name is `trext_medcat_annotations`.** This is the index flow 5 reads. The `trext_md_*` name in one export was only for testing.
+- [ ] **Check the index name** on PutElasticsearchJson is `trext_medcat_annotations`, the index flow 5 reads.
+- [ ] **Check PutElasticsearchJson's Client Service** is "ElasticSearchClientServiceImpl - CogStack ES cluster". If you deleted a duplicate client, the processor may still point at the deleted one and show as invalid.
 - [ ] **Check the MedCAT service responds:**
 
   ```bash
@@ -284,19 +344,22 @@ _Drawn from the processor positions and connections in the flow definition. Illu
   ```
 
 - [ ] **Keep "Request Body Enabled" set to `true`** on both InvokeHTTP processors, as the canvas label says. The notes must be sent as JSON.
-- [ ] **Set GenerateTableFetch's Run Schedule**, for example to `1 min`. It's `0 sec` in the export.
-- [ ] **Consider a smaller page.** Each request carries 3,000 notes. If InvokeHTTP keeps timing out after 600 seconds, lower Partition Size, for example to 500.
-- [ ] **Set PutElasticsearchJson's Bulletin Level to WARN.** It's set to DEBUG, which floods the bulletin board.
+- [ ] **On PutElasticsearchJson, set Batch Size to about `1000`, Log Error Responses to `true` and Bulletin Level to WARN.** Batches of 10,000 annotations are about as large as the bulk requests that made OpenSearch reset connections in flow 1. With errors logged, rejected annotations show up in `nifi-app.log` with OpenSearch's reason.
+- [ ] **If InvokeHTTP keeps timing out** after 600 seconds, lower ConsumeElasticsearch's Size, for example to 500.
 
 ![InvokeHTTP properties in flow 2](images/ui-flow2-invokehttp-properties.png)
 
 _InvokeHTTP properties in flow 2. Illustration, not a screenshot._
 
-**Run:** start the group. Expect very large queue counts after SplitJson, because it creates one FlowFile per annotation (back pressure is set at 200,000). Each annotation's `timestamp` field, which the MedCAT service adds, is what flow 5 uses to read them incrementally.
+**Run:** start the group. Expect very large queue counts after SplitJson, because it creates one FlowFile per annotation (back pressure is set at 200,000). To check annotations have the note fields:
+
+```bash
+curl -k -u admin:<password> "https://elasticsearch-1:9200/trext_medcat_annotations/_search?size=1&q=_exists_:hadm_id&_source=annotation_id,note_id,hadm_id,cui&pretty"
+```
 
 ## Flow 3: Extract Anthropometrics
 
-This flow runs the medspaCy weight/BMI pipeline over every discharge note and indexes the notes that have a weight status. This section describes the revised version of the flow, with its fixes applied.
+This flow runs the medspaCy weight/BMI pipeline over every note in `discharge_summaries` and indexes the notes that have a weight status.
 
 ![Flow 3 processor chain](images/flow3.png)
 
@@ -306,12 +369,10 @@ On the canvas after import, before any services are enabled:
 
 _Drawn from the processor positions and connections in the flow definition. Illustration, not a screenshot._
 
-1. **GenerateTableFetch** reads `mimiciv_note.discharge` (`note_id, subject_id, hadm_id, text`, `WHERE text IS NOT NULL`) in pages of 2,000, every minute. Its checkpoint is the maximum `note_id`.
-2. **GenerateTableFetch - For testing a few** is for test runs only. It runs the same query limited to 500 notes, via the table expression `(SELECT * FROM mimiciv_note.discharge LIMIT 500) AS discharge`, and feeds the same ExecuteSQLRecord.
-3. **ExecuteSQLRecord** (2 tasks) writes one FlowFile per page (Max Rows Per Flow File = 0), as JSON.
-4. **WeightBmiMedspacy 1.0.3** (8 tasks) has Text Field `text`, batch size 50, Emit Only Positive Notes `true` and BMI range 5–90.
-5. **RouteOnAttribute** has `has_records = ${record.count:gt(0)}`. Pages with no positive notes go to `unmatched`, which is terminated, so they're discarded.
-6. **PutElasticsearchRecord** writes to index `anthropometrics_bmi_medspacy`, with ID `/note_id` and Retain Record Path ID Field `true`. `retry` loops back to itself; `failure` and `errors` go to a funnel.
+1. **ConsumeElasticsearch** reads `discharge_summaries` with the same settings as in flow 2, except Size `2000`. Each FlowFile is a JSON array of up to 2,000 notes.
+2. **WeightBmiMedspacy 1.0.3** (8 tasks) has Text Field `text`, batch size 50, Emit Only Positive Notes `true` and BMI range 5–90. The documents already carry `note_id`, `subject_id` and `hadm_id`, which it copies to its output.
+3. **RouteOnAttribute** has `has_records = ${record.count:gt(0)}`. Pages with no positive notes go to `unmatched`, which is terminated, so they're discarded.
+4. **PutElasticsearchRecord** writes to index `anthropometrics_bmi_medspacy`, with ID `/note_id`, Retain Record Path ID Field `true`, batches of 100 and Log Error Responses on. `retry` loops back to itself; `failure` and `errors` go to a funnel.
 
 ![Inside WeightBmiMedspacy](images/diagram-medspacy-pipeline.png)
 
@@ -321,15 +382,15 @@ _RouteOnAttribute relationships in flow 3: unmatched is terminated. Illustration
 
 **Before starting:**
 
-- [ ] **Start only one GenerateTableFetch.** Use the testing one for a trial run, and the main one for the full load. Each keeps its own checkpoint.
-- [ ] **Expect a long queue at first.** On the first run GenerateTableFetch queues every page at once (about 165 pages of 2,000 notes), and the flow then works through them. Back pressure is left at the default.
+- [ ] **Check the index name** on PutElasticsearchRecord is `anthropometrics_bmi_medspacy`, the index flow 4 reads.
+- [ ] **Expect a long first run.** With no state, ConsumeElasticsearch reads all of `discharge_summaries`, in pages of 2,000.
 - [ ] **Watch memory on the first run.** Each of the 8 WeightBmiMedspacy tasks can be its own Python process, holding spaCy plus a 2,000-note page.
 
 **Run:**
 
-1. Start the testing GenerateTableFetch with everything downstream of it.
-2. Check a few documents in `anthropometrics_bmi_medspacy`.
-3. Stop the testing GenerateTableFetch and start the main one.
+1. Add the `subject_id` test filter (see [Testing on a few patients](#how-the-flows-read-incrementally)) and start the group.
+2. Check a few documents in `anthropometrics_bmi_medspacy`, and the failure funnels.
+3. Remove the test filter, **Clear State** on ConsumeElasticsearch, and start it again for the full load.
 
 ## Flow 4: Load anthropometrics to OMOP staging DB
 
@@ -351,7 +412,7 @@ _Drawn from the processor positions and connections in the flow definition. Illu
 **Before starting:**
 
 - [ ] **Enter the Database Password** on OmopNoteNlpLoader.
-- [ ] **Let flow 3 finish its first full pass before starting this flow.** ConsumeElasticsearch only reads notes with a `note_id` higher than the last one it saw. Flow 3 indexes pages in parallel, so notes don't arrive in `note_id` order, and a note indexed after this flow has moved past its `note_id` would never be loaded. Once the backlog is done, new notes arrive in small batches and the risk is low. The proper fix is to track an indexing timestamp instead of `note_id`, which needs a `processed_at` field added to `WeightBmiMedspacy`.
+- [ ] **Let flow 3 finish its first full pass before starting this flow.** ConsumeElasticsearch only reads notes with a `note_id` higher than the last one it saw. Flow 3 writes notes in the order flow 1 indexed them, not in `note_id` order, so a note indexed after this flow has moved past its `note_id` would never be loaded. Once the backlog is done, new notes arrive in small batches and the risk is low. The proper fix is the one flows 2 and 3 now use: stamp `indexed_at` with an UpdateRecord before flow 3's PutElasticsearchRecord, and track that field here instead of `note_id`.
 - [ ] **Decide on Replace Existing Rows.** `false` appends, which is fine while each note is read once. Set it to `true` before any reload (after **View State → Clear State** on ConsumeElasticsearch); otherwise every row is written twice. Because there is one discharge note per admission, replacing rows by `hadm_id` is safe.
 
 ![ConsumeElasticsearch → View State, with Clear State](images/ui-consume-view-state.png)
@@ -380,7 +441,7 @@ LIMIT 30;
 
 ## Flow 5: Load mental health mentions to OMOP staging DB
 
-This flow is the **atomic entity** path. It streams MedCAT annotations from OpenSearch and writes one `note_nlp` row per mental health mention, with no relationship rows. It keeps only the CUIs listed in `cui_filter.txt`.
+This flow is the **atomic entity** path. It streams MedCAT annotations from OpenSearch and writes one `note_nlp` row per mental health mention, with no relationship rows. It keeps only the CUIs listed in `cui_filter.txt`. `note_nlp.note_id` is set to the annotation's `hadm_id`.
 
 ![Flow 5 processor chain](images/flow5.png)
 
@@ -391,8 +452,9 @@ On the canvas after import, before any services are enabled:
 _Drawn from the processor positions and connections in the flow definition. Illustration, not a screenshot._
 
 1. **ConsumeElasticsearch** reads index `trext_medcat_annotations`, with Range Query Field `timestamp` (ascending) and Additional Filters `[{"range": {"timestamp": {"lt": "now-2m"}}}]`, which skips annotations less than 2 minutes old. It reads pages of **2,000** using scroll pagination, one FlowFile per page, and runs every 30 seconds on the primary node.
-2. **MedcatNoteNlpLoader 1.2.0** is configured as follows:
-   - Target Schema `omop_temp`, Note Lookup Table `mimiciv_note.discharge`, NLP System `MedCAT-v2-Snomed2025-MIMIC_IV`.
+2. **MedcatNoteNlpLoader 1.3.0** is configured as follows:
+   - Target Schema `omop_temp`, NLP System `MedCAT-v2-Snomed2025-MIMIC_IV`.
+   - Note Lookup Table `mimiciv_note.discharge`. Version 1.3.0 takes `hadm_id` from the annotation itself, which every annotation from the current flow 2 has. It only looks up `note_id` (or the older `id`) in this table for annotations without one, such as those indexed when flow 2 still read from Postgres. Annotations it can't map are skipped and counted in the `medcat.skipped_unmapped_hadm_id` attribute.
    - CUI Filter Mode `File`, with CUI Filter File `/opt/nifi/user_scripts/cui_filter.txt`. This is the only place the CUI filter is set.
    - The default Meta-annotation Rules, Default term_exists `Y`, and Skip Duplicates `true`.
 
@@ -405,8 +467,10 @@ _MedcatNoteNlpLoader properties in flow 5. Illustration, not a screenshot._
 **Before starting:**
 
 - [ ] **Enter the Database Password** on MedcatNoteNlpLoader.
+- [ ] **Check the loader is version 1.3.0.** Version 1.2.0 looks annotations up by `id`, which annotations from the current flow 2 don't have, so it skips them all. If the processor shows 1.2.0, install `medcat_omop_note_nlp_loader.py` 1.3.0, restart NiFi, then right-click → **Change Version**.
 - [ ] **Confirm `cui_filter.txt` is in the container.** If it's missing, the loader won't start; it reports a file-not-found error rather than loading everything.
 - [ ] **Widen the delay while flow 2 works through its backlog.** Annotations are timestamped when MedCAT processes them, but during a backlog they can wait in flow 2's queues for more than 2 minutes before being indexed. Any annotation indexed after this flow has passed its timestamp is missed. During the first load, use for example `now-30m`, or start this flow only after flow 2 has finished.
+- [ ] **After the first run, check `medcat.skipped_unmapped_hadm_id` is 0** on the loader's output FlowFiles (List Queue → a FlowFile → Attributes).
 - [ ] **Check the model's Status values** against the Meta-annotation Rules. The `medcat.unmapped_meta_values` attribute on the loader's output lists any value that has no rule.
 
 **To change the CUI list later:**
