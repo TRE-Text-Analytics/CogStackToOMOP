@@ -1,5 +1,24 @@
 # CogStack NiFi 2.0 workflows: setup guide
 
+_Updated 25 Nov 2026_
+
+**Tested with:** NiFi 2.7.2 in the `cogstacksystems/cogstack-nifi` image, Python 3.11, OpenSearch, and a CogStack-NiFi checkout whose `deploy/Makefile` has `start-data-infra` (and no `init-security` targets). The data is MIMIC-IV discharge notes, which you need your own PhysioNet credentialed access to use; this repository contains no MIMIC data.
+
+**In this repository:**
+
+```
+cogstack-nifi/                     copy into a CogStack-NiFi checkout (same folder names)
+  nifi/user_python_extensions/     WeightBmiMedspacy, OmopNoteNlpLoader, MedcatNoteNlpLoader
+  nifi/user_scripts/               flow 1 Groovy scripts, cui_filter.txt
+  nifi/user_schemas/               document-mimic.avsc
+  nifi/user_templates/flows/       the five flow definitions to import
+  services/pgsamples/mimiciv/sql/  discharge_binary.sql
+notebooks/                         generate_mimic_iv_binary_samples.ipynb
+docs/                              TRExt Deployment Guide section
+images/                            figures for this guide
+CHANGELOG.md
+```
+
 ## Contents
 
 1. [Overview](#overview)
@@ -11,6 +30,7 @@
 7. [Flow 3: Extract Anthropometrics](#flow-3-extract-anthropometrics)
 8. [Flow 4: Load anthropometrics to OMOP staging DB](#flow-4-load-anthropometrics-to-omop-staging-db)
 9. [Flow 5: Load mental health mentions to OMOP staging DB](#flow-5-load-mental-health-mentions-to-omop-staging-db)
+10. [Appendix: about the images](#appendix-about-the-images)
 
 ## Overview
 
@@ -41,7 +61,7 @@ So only flow 4 writes to the relationship tables. To read a compound entity back
 
 1. Install the external files.
 2. Import all five flows.
-3. Start flow 1.
+3. With the stack running (`make start-data-infra`), start flow 1.
 4. Start flows 2 and 3 once `discharge_summaries` has data.
 5. Start flows 4 and 5 once their source indexes have data.
 
@@ -51,12 +71,31 @@ The flows keep running side by side after that. Each one picks up what the flow 
 
 The flows were exported from NiFi **2.7.2** running in the CogStack NiFi container (`cogstack-nifi`). Import them into the same NiFi version. A different 2.x version usually works, but the standard processors may show version warnings until you change them.
 
+- [ ] **The stack is running.** On a new checkout, generate the [OpenSearch certificates](#opensearch-certificates) first: OpenSearch won't start without them. Then, from the CogStack-NiFi repository's `deploy` folder (the one with the Makefile), run:
+
+  ```bash
+  make start-data-infra
+  ```
+
+  This starts everything the five flows need, each with its own `start-…` target if you need to restart one part:
+
+  | Make target | Containers | Used by |
+  | --- | --- | --- |
+  | `start-nifi` | `cogstack-nifi`, `cogstack-nifi-nginx`, `cogstack-nifi-registry-flow` | all flows; NiFi UI at `https://localhost:8443/nifi` |
+  | `start-elastic` | `elasticsearch-1`, `elasticsearch-2`, `cogstack-kibana` (OpenSearch Dashboards, port 5601) | all flows |
+  | `start-samples` | `cogstack-samples-db` (Postgres, host port 5554), pgAdmin (port 5566) | flow 1 reads, flows 4 and 5 write |
+  | `start-medcat-service` | the MedCAT service | flow 2 |
+  | `start-ocr-services` | `ocr-service`, `ocr-service-text-only` | flow 1 |
+  | `start-jupyterlab`, `start-label-studio` | JupyterLab, Label Studio | not used by the flows; JupyterLab can run the sample generator notebook |
+
+  To stop everything, run `make stop-data-infra`.
+
 - [ ] **These hostnames resolve from the NiFi container:**
   - `samples-db:5432` (Postgres, database `mimic`: flow 1 reads it, flows 4 and 5 write to it)
   - `elasticsearch-1:9200` and `elasticsearch-2:9200` (OpenSearch, HTTPS)
   - `ocr-service:8090` (Tika OCR, flow 1)
   - `cogstack-medcat-service-production:5000` (MedCAT, flow 2)
-- [ ] **The OpenSearch certificates are at the same path inside the container:** `/security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/`. That folder holds `elasticsearch-1-keystore.jks` and `elasticsearch-1-truststore.key` (a JKS file despite its name). You'll also need the keystore, key and truststore passwords.
+- [ ] **The OpenSearch certificates exist** in `security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/`. The flows' SSL Context Service uses `elasticsearch-1-keystore.jks` and `elasticsearch-1-truststore.key` (a JKS file despite its name) from `/security/…`, which is that host folder mounted read-only. If they're missing, see [OpenSearch certificates](#opensearch-certificates).
 - [ ] **Credentials are to hand:** Postgres user `test`, OpenSearch user `admin`, and their passwords. Flow definitions never contain passwords.
 - [ ] **The OMOP staging DB has been initialised.** Its initialisation scripts create `note_nlp`, `note_nlp_relationship` and `note_nlp_relationship_part` in `omop_temp`, with `note_nlp_concept_id` and `note_nlp_source_concept_id` as `bigint`. They also create the index the loaders use for their duplicate check:
 
@@ -68,6 +107,68 @@ The flows were exported from NiFi **2.7.2** running in the CogStack NiFi contain
 
 - [ ] **`mimiciv_note.discharge_binary` exists and holds complete documents.** Create it with `discharge_binary.sql` (or include that file in the databank's schema scripts), then fill it with `generate_mimic_iv_binary_samples.ipynb`: set `MODE = "new_sample"` and run all cells. The notebook writes each note as a multi-page PDF or a DOCX.
 - [ ] **Python 3.11 is in the container**, which the CogStack image provides. The NumPy pin in `WeightBmiMedspacy` assumes 3.11.
+
+### OpenSearch certificates
+
+NiFi connects to OpenSearch over HTTPS, so the flows need the OpenSearch node certificates. They're generated for each deployment by the scripts in the repository's `security/` folder and aren't part of the flow files. Private keys never go into version control or into the workflow bundle.
+
+**1. Check whether they already exist.** From `deploy/`:
+
+```bash
+ls -l ../security/certificates/root/
+ls -l ../security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/
+```
+
+If `elasticsearch-1/` holds `elasticsearch-1.crt`, `.key`, `.p12`, `elasticsearch-1-keystore.jks` and `elasticsearch-1-truststore.key`, skip to step 3.
+
+**2. Generate them.** Use whichever your checkout supports:
+
+- **Newer CogStack-NiFi checkouts** have `init-security` targets in `deploy/Makefile` (check with `grep init-security Makefile`). From `deploy/`:
+
+  ```bash
+  make init-security-opensearch
+  ```
+
+  This creates the root CA if there isn't one, then the node certificates for `elasticsearch-1`, `-2` and `-3`, and the OpenSearch client and admin certificates. It leaves complete certificate sets unchanged, so it's safe to re-run.
+
+- **Older checkouts** (no `init-security` targets) run the scripts directly. They use relative paths, so run them from `security/scripts/`:
+
+  ```bash
+  cd ../security/scripts
+  ./create_root_ca_cert.sh                     # ONLY if ../certificates/root/ is empty
+  ./create_opensearch_node_cert.sh elasticsearch-1 elasticsearch-2 elasticsearch-3
+  ./create_opensearch_client_admin_certs.sh
+  ```
+
+**Don't create a new root CA on a deployment that already has one.** NiFi's own certificate and the PostgreSQL certificates are signed by the same CA, so replacing it means regenerating all of them. If another machine already runs this stack, copy its `security/certificates/` folder instead.
+
+The node certificates are valid for the host names in `ES_NODE_SUBJ_ALT_NAMES` in `security/env/certificates_elasticsearch.env`, which already includes `elasticsearch-1` to `-3`, `nifi` and `localhost`. Add any other name you connect with before generating.
+
+**3. Note the passwords** the flows need:
+
+| Where in NiFi | Value | Set in (default) |
+| --- | --- | --- |
+| SSL Context Service: Keystore Password, Key Password, Truststore Password | the node certificate password | `ES_CERTIFICATE_PASSWORD` in `security/env/certificates_elasticsearch.env` (`cogstackNifi`) |
+| Elasticsearch client service: Username / Password | the OpenSearch admin user | `ELASTIC_USER` / `ELASTIC_PASSWORD` in `security/env/users_elasticsearch.env` (`admin` / `admin`) |
+
+Change the defaults for any real deployment. `ELASTIC_PASSWORD` must match the admin hash in `security/es_roles/opensearch/internal_users.yml`; the repository's `update_opensearch_users.sh` keeps them in step.
+
+**4. Check and load them.**
+
+```bash
+# the chain is valid
+openssl verify -CAfile ../security/certificates/root/root-ca.pem \
+  ../security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/elasticsearch-1.crt
+
+# the keystore opens with the password from step 3
+keytool -list -keystore ../security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/elasticsearch-1-keystore.jks
+
+# NiFi can see them
+docker exec cogstack-nifi ls -l /security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/
+```
+
+After generating new certificates, restart OpenSearch so the nodes use them (`make start-elastic`). In NiFi, disable and re-enable each SSL Context Service, which rereads the keystore.
+
 
 ## Installing the external files
 
@@ -86,54 +187,54 @@ A flow definition records only the *paths* and *processor versions* it uses, not
 | `cui_filter.txt` | Flow 5 | `/opt/nifi/user_scripts/` |
 | `postgresql-42.7.7.jar` (JDBC driver) | Flow 1 | `/opt/nifi/drivers/` |
 
-**Flow 1's scripts and schema must be the combined-output versions** (November 2026). They write the same fields as `mimiciv_note.discharge`, plus the OCR metadata. Older versions write `doc_id` and `doc_text` and fail with the current flow. These files, `discharge_binary.sql` and the sample generator notebook are in the `files/` folder next to this guide, together with `medcat_omop_note_nlp_loader.py` 1.3.0 for flow 5.
+**Flow 1's scripts and schema must be the combined-output versions** (November 2026). They write the same fields as `mimiciv_note.discharge`, plus the OCR metadata. Older versions write `doc_id` and `doc_text` and fail with the current flow. All the files in the table are in this repository's [`cogstack-nifi/`](cogstack-nifi/) folder, in the same folders as a CogStack-NiFi checkout, so you can copy `cogstack-nifi/nifi/` over the checkout's `nifi/` folder. `discharge_binary.sql` is in [`cogstack-nifi/services/pgsamples/mimiciv/sql/`](cogstack-nifi/services/pgsamples/mimiciv/sql/), the sample generator notebook is in [`notebooks/`](notebooks/), and the five flow definitions to import are in [`cogstack-nifi/nifi/user_templates/flows/`](cogstack-nifi/nifi/user_templates/flows/).
 
 **File names and processor names differ.** NiFi identifies a Python processor by the class name inside the file (`WeightBmiMedspacy`, `OmopNoteNlpLoader`, `MedcatNoteNlpLoader`), not by the file name. That class name is what you search for in the Add Processor dialog and what the flow definitions refer to. It's also the name of each processor's dependency folder under `/opt/nifi/user_scripts/extensions/`. Keep exactly one file per processor in the extensions folder. If a renamed copy and an old copy both define the same class, NiFi lists the processor twice.
 
 ![Where the external files go, and the dependency folders NiFi creates](images/diagram-install-layout.png)
 
-### Step 1: Check what's already there
+### Step 1: Copy the files into the repository's nifi folders
+
+`services.yml` mounts all four container folders from the repository, so you copy the files on the host, not into the container. Files put there survive `make start-nifi`, which recreates the NiFi container (`--force-recreate`).
+
+| Container path | Host folder (from `deploy/`) |
+| --- | --- |
+| `/opt/nifi/nifi-current/python_extensions/` | `../nifi/user_python_extensions/` |
+| `/opt/nifi/user_scripts/` | `../nifi/user_scripts/` |
+| `/opt/nifi/user_schemas/` | `../nifi/user_schemas/` |
+| `/opt/nifi/drivers/` | `../nifi/drivers/` |
+
+From the `deploy` folder, with the files in a folder `$SRC`:
+
+```bash
+# Python processors
+cp $SRC/weight_and_bmi_medspacy_extraction.py $SRC/omop_note_nlp_loader.py $SRC/medcat_omop_note_nlp_loader.py ../nifi/user_python_extensions/
+
+# Groovy scripts and CUI filter
+cp $SRC/prepare-db-record-for-tika-request-single-mimic.groovy $SRC/parse-tika-response-single-mimic.groovy \
+   $SRC/parse-tika-result-json-to-avro-mimic.groovy $SRC/cui_filter.txt ../nifi/user_scripts/
+
+# Avro schema and JDBC driver
+cp $SRC/document-mimic.avsc ../nifi/user_schemas/
+cp $SRC/postgresql-42.7.7.jar ../nifi/drivers/
+
+# Make everything readable by the NiFi user (UID 1000 by default)
+chmod -R a+rX ../nifi/user_python_extensions ../nifi/user_scripts ../nifi/user_schemas ../nifi/drivers
+```
+
+To check the container sees them:
 
 ```bash
 docker exec cogstack-nifi bash -c 'ls -l /opt/nifi/nifi-current/python_extensions /opt/nifi/user_scripts /opt/nifi/user_schemas /opt/nifi/drivers'
 ```
 
-### Step 2: Find out which folders are mounted from the host
+### Step 2: Restart NiFi and let the Python dependencies install
 
 ```bash
-docker inspect cogstack-nifi --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
+docker restart cogstack-nifi     # or: make start-nifi
 ```
 
-CogStack normally mounts `user_scripts`, `user_schemas` and `security` from the host. If a folder is mounted, copy files into its **host** folder instead, so they survive the container being recreated. A file copied with `docker cp` into a folder that isn't mounted is lost when the container is rebuilt.
-
-### Step 3: Copy the files in
-
-```bash
-# Python processors
-docker cp weight_and_bmi_medspacy_extraction.py cogstack-nifi:/opt/nifi/nifi-current/python_extensions/
-docker cp omop_note_nlp_loader.py                cogstack-nifi:/opt/nifi/nifi-current/python_extensions/
-docker cp medcat_omop_note_nlp_loader.py         cogstack-nifi:/opt/nifi/nifi-current/python_extensions/
-
-# Groovy scripts, CUI filter, Avro schema, JDBC driver
-docker cp prepare-db-record-for-tika-request-single-mimic.groovy cogstack-nifi:/opt/nifi/user_scripts/
-docker cp parse-tika-response-single-mimic.groovy                 cogstack-nifi:/opt/nifi/user_scripts/
-docker cp parse-tika-result-json-to-avro-mimic.groovy             cogstack-nifi:/opt/nifi/user_scripts/
-docker cp cui_filter.txt                                          cogstack-nifi:/opt/nifi/user_scripts/
-docker exec -u 0 cogstack-nifi mkdir -p /opt/nifi/user_schemas /opt/nifi/drivers
-docker cp document-mimic.avsc     cogstack-nifi:/opt/nifi/user_schemas/
-docker cp postgresql-42.7.7.jar   cogstack-nifi:/opt/nifi/drivers/
-
-# Make everything readable by the NiFi user
-docker exec -u 0 cogstack-nifi chmod -R a+rX /opt/nifi/nifi-current/python_extensions /opt/nifi/user_scripts /opt/nifi/user_schemas /opt/nifi/drivers
-```
-
-### Step 4: Restart NiFi and let the Python dependencies install
-
-```bash
-docker restart cogstack-nifi
-```
-
-NiFi discovers the new Python processors when it starts. The first time each processor is used, NiFi pip-installs its dependencies into `/opt/nifi/user_scripts/extensions/<Processor>/<version>/`:
+NiFi discovers the new Python processors when it starts. The first time each processor is used, NiFi pip-installs its dependencies into `/opt/nifi/user_scripts/extensions/<Processor>/<version>/`, which is `../nifi/user_scripts/extensions/` on the host, so they also survive the container being recreated:
 
 - `WeightBmiMedspacy` installs medspaCy, spaCy and a NumPy version below 2. This takes several minutes.
 - The two loaders install only `psycopg2-binary`.
@@ -475,7 +576,16 @@ _MedcatNoteNlpLoader properties in flow 5. Illustration, not a screenshot._
 
 **To change the CUI list later:**
 
-1. Update `cui_filter.txt` in the container.
+1. Update `cui_filter.txt` in `../nifi/user_scripts/` (the container's `/opt/nifi/user_scripts/`).
 2. Stop and start the loader, so it rereads the file.
 3. If you added CUIs, stop ConsumeElasticsearch, **View State → Clear State**, and start it again. This re-streams older annotations, and Skip Duplicates prevents duplicate rows.
 
+## Appendix: about the images
+
+All images are in `images/` and were generated, not captured from a running NiFi:
+
+- **`flow1.png` … `flow5.png`, `lineage.png` and `diagram-*.png`** are explanatory diagrams.
+- **`canvas-flow*.png`** are drawn from each flow definition's processor positions, connections, funnels and labels. The layout matches what you'll see after import; the counters are zero.
+- **`ui-*.png`** are illustrations of NiFi dialogs, filled in with the values from the flow definitions. NiFi's own styling differs a little.
+
+To swap in real screenshots, save each one under the same file name in `images/`. The guide picks it up without further edits.
