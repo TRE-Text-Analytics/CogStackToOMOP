@@ -1,7 +1,5 @@
 # CogStack NiFi 2.0 workflows: setup guide
 
-_Updated 25 Nov 2026_
-
 **Tested with:** NiFi 2.7.2 in the `cogstacksystems/cogstack-nifi` image, Python 3.11, OpenSearch, and a CogStack-NiFi checkout whose `deploy/Makefile` has `start-data-infra` (and no `init-security` targets). The data is MIMIC-IV discharge notes, which you need your own PhysioNet credentialed access to use; this repository contains no MIMIC data.
 
 **In this repository:**
@@ -582,10 +580,4 @@ _MedcatNoteNlpLoader properties in flow 5. Illustration, not a screenshot._
 
 ## Appendix: about the images
 
-All images are in `images/` and were generated, not captured from a running NiFi:
-
-- **`flow1.png` … `flow5.png`, `lineage.png` and `diagram-*.png`** are explanatory diagrams.
-- **`canvas-flow*.png`** are drawn from each flow definition's processor positions, connections, funnels and labels. The layout matches what you'll see after import; the counters are zero.
-- **`ui-*.png`** are illustrations of NiFi dialogs, filled in with the values from the flow definitions. NiFi's own styling differs a little.
-
-To swap in real screenshots, save each one under the same file name in `images/`. The guide picks it up without further edits.
+All images are in `images/` and illustrative.
