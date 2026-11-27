@@ -1,0 +1,827 @@
+{
+  "flowContents": {
+    "identifier": "192778e2-6863-3435-a20b-a90398dc72f1",
+    "instanceIdentifier": "0da4302a-01a2-1000-0a2e-836de9854629",
+    "name": "Load anthropometrics to OMOP staging DB",
+    "comments": "",
+    "position": {
+      "x": -576.0,
+      "y": 184.0
+    },
+    "processGroups": [],
+    "remoteProcessGroups": [],
+    "processors": [
+      {
+        "identifier": "ce00204f-9c59-3bdf-9015-883cf4636984",
+        "instanceIdentifier": "0ddbd969-01a2-1000-2d60-dc090b7f9c10",
+        "name": "OmopNoteNlpLoader",
+        "comments": "",
+        "position": {
+          "x": -240.0,
+          "y": -104.0
+        },
+        "type": "OmopNoteNlpLoader",
+        "bundle": {
+          "group": "org.apache.nifi",
+          "artifact": "python-extensions",
+          "version": "1.0.3"
+        },
+        "properties": {
+          "Database Port": "5432",
+          "Database Name": "mimic",
+          "Target Schema": "omop_temp",
+          "Database User": "test",
+          "Replace Existing Rows": "false",
+          "Database Host": "samples-db"
+        },
+        "propertyDescriptors": {
+          "Database Port": {
+            "name": "Database Port",
+            "displayName": "Database Port",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Database Name": {
+            "name": "Database Name",
+            "displayName": "Database Name",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Target Schema": {
+            "name": "Target Schema",
+            "displayName": "Target Schema",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Database User": {
+            "name": "Database User",
+            "displayName": "Database User",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Database Password": {
+            "name": "Database Password",
+            "displayName": "Database Password",
+            "identifiesControllerService": false,
+            "sensitive": true,
+            "dynamic": false
+          },
+          "Replace Existing Rows": {
+            "name": "Replace Existing Rows",
+            "displayName": "Replace Existing Rows",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Database Host": {
+            "name": "Database Host",
+            "displayName": "Database Host",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          }
+        },
+        "style": {},
+        "schedulingPeriod": "0 sec",
+        "schedulingStrategy": "TIMER_DRIVEN",
+        "executionNode": "ALL",
+        "penaltyDuration": "30 sec",
+        "yieldDuration": "1 sec",
+        "bulletinLevel": "WARN",
+        "runDurationMillis": 25,
+        "concurrentlySchedulableTaskCount": 1,
+        "autoTerminatedRelationships": [
+          "original",
+          "success"
+        ],
+        "scheduledState": "ENABLED",
+        "retryCount": 10,
+        "retriedRelationships": [],
+        "backoffMechanism": "PENALIZE_FLOWFILE",
+        "maxBackoffPeriod": "10 mins",
+        "componentType": "PROCESSOR",
+        "groupIdentifier": "192778e2-6863-3435-a20b-a90398dc72f1"
+      },
+      {
+        "identifier": "9b2aacf2-3002-3064-ae9c-bd5686c75f1a",
+        "instanceIdentifier": "0dd53547-01a2-1000-010c-ed0f9d77c13c",
+        "name": "ConsumeElasticsearch",
+        "comments": "",
+        "position": {
+          "x": -264.0,
+          "y": -384.0
+        },
+        "type": "org.apache.nifi.processors.elasticsearch.ConsumeElasticsearch",
+        "bundle": {
+          "group": "org.apache.nifi",
+          "artifact": "nifi-elasticsearch-restapi-nar",
+          "version": "2.7.2"
+        },
+        "properties": {
+          "Aggregation Results Format": "FULL",
+          "Script Fields": null,
+          "Pagination Keep Alive": "10 mins",
+          "Max JSON Field String Length": "20 MB",
+          "Size": "500",
+          "Aggregations": null,
+          "Additional Filters": null,
+          "Index": "anthropometrics_bmi_medspacy",
+          "Search Results Split": "splitUp-no",
+          "Initial Value Date Format": null,
+          "Search Results Format": "FULL",
+          "Output No Hits": "false",
+          "Initial Value Date Time Zone": null,
+          "Sort Order": "asc",
+          "Type": null,
+          "Fields": null,
+          "Query Attribute": null,
+          "Aggregation Results Split": "splitUp-no",
+          "Sort": null,
+          "Pagination Type": "pagination-scroll",
+          "Initial Value": null,
+          "Range Query Field": "note_id.keyword",
+          "Client Service": "afaa7c3b-be4a-326e-ab05-018f26660913"
+        },
+        "propertyDescriptors": {
+          "Aggregation Results Format": {
+            "name": "Aggregation Results Format",
+            "displayName": "Aggregation Results Format",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Script Fields": {
+            "name": "Script Fields",
+            "displayName": "Script Fields",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Pagination Keep Alive": {
+            "name": "Pagination Keep Alive",
+            "displayName": "Pagination Keep Alive",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Max JSON Field String Length": {
+            "name": "Max JSON Field String Length",
+            "displayName": "Max JSON Field String Length",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Size": {
+            "name": "Size",
+            "displayName": "Size",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Aggregations": {
+            "name": "Aggregations",
+            "displayName": "Aggregations",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Additional Filters": {
+            "name": "Additional Filters",
+            "displayName": "Additional Filters",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Index": {
+            "name": "Index",
+            "displayName": "Index",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Search Results Split": {
+            "name": "Search Results Split",
+            "displayName": "Search Results Split",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Initial Value Date Format": {
+            "name": "Initial Value Date Format",
+            "displayName": "Initial Value Date Format",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Search Results Format": {
+            "name": "Search Results Format",
+            "displayName": "Search Results Format",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Output No Hits": {
+            "name": "Output No Hits",
+            "displayName": "Output No Hits",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Initial Value Date Time Zone": {
+            "name": "Initial Value Date Time Zone",
+            "displayName": "Initial Value Date Time Zone",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Sort Order": {
+            "name": "Sort Order",
+            "displayName": "Sort Order",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Type": {
+            "name": "Type",
+            "displayName": "Type",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Fields": {
+            "name": "Fields",
+            "displayName": "Fields",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Query Attribute": {
+            "name": "Query Attribute",
+            "displayName": "Query Attribute",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Aggregation Results Split": {
+            "name": "Aggregation Results Split",
+            "displayName": "Aggregation Results Split",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Sort": {
+            "name": "Sort",
+            "displayName": "Sort",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Pagination Type": {
+            "name": "Pagination Type",
+            "displayName": "Pagination Type",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Initial Value": {
+            "name": "Initial Value",
+            "displayName": "Initial Value",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Range Query Field": {
+            "name": "Range Query Field",
+            "displayName": "Range Query Field",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Client Service": {
+            "name": "Client Service",
+            "displayName": "Client Service",
+            "identifiesControllerService": true,
+            "sensitive": false,
+            "dynamic": false
+          }
+        },
+        "style": {},
+        "schedulingPeriod": "1 min",
+        "schedulingStrategy": "TIMER_DRIVEN",
+        "executionNode": "PRIMARY",
+        "penaltyDuration": "30 sec",
+        "yieldDuration": "1 sec",
+        "bulletinLevel": "WARN",
+        "runDurationMillis": 0,
+        "concurrentlySchedulableTaskCount": 1,
+        "autoTerminatedRelationships": [
+          "aggregations",
+          "retry"
+        ],
+        "scheduledState": "ENABLED",
+        "retryCount": 10,
+        "retriedRelationships": [
+          "failure"
+        ],
+        "backoffMechanism": "PENALIZE_FLOWFILE",
+        "maxBackoffPeriod": "10 mins",
+        "componentType": "PROCESSOR",
+        "groupIdentifier": "192778e2-6863-3435-a20b-a90398dc72f1"
+      }
+    ],
+    "inputPorts": [],
+    "outputPorts": [],
+    "connections": [
+      {
+        "identifier": "7b8b4578-5ce3-3244-9b02-79d51055769a",
+        "instanceIdentifier": "0dedf802-01a2-1000-94f4-2b1cad075448",
+        "name": "",
+        "source": {
+          "id": "9b2aacf2-3002-3064-ae9c-bd5686c75f1a",
+          "type": "PROCESSOR",
+          "groupId": "192778e2-6863-3435-a20b-a90398dc72f1",
+          "name": "ConsumeElasticsearch",
+          "comments": "",
+          "instanceIdentifier": "0dd53547-01a2-1000-010c-ed0f9d77c13c"
+        },
+        "destination": {
+          "id": "ce00204f-9c59-3bdf-9015-883cf4636984",
+          "type": "PROCESSOR",
+          "groupId": "192778e2-6863-3435-a20b-a90398dc72f1",
+          "name": "OmopNoteNlpLoader",
+          "comments": "",
+          "instanceIdentifier": "0ddbd969-01a2-1000-2d60-dc090b7f9c10"
+        },
+        "labelIndex": 0,
+        "zIndex": 1,
+        "selectedRelationships": [
+          "hits"
+        ],
+        "backPressureObjectThreshold": 10000,
+        "backPressureDataSizeThreshold": "1 GB",
+        "flowFileExpiration": "0 sec",
+        "prioritizers": [],
+        "bends": [],
+        "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+        "partitioningAttribute": "",
+        "loadBalanceCompression": "DO_NOT_COMPRESS",
+        "componentType": "CONNECTION",
+        "groupIdentifier": "192778e2-6863-3435-a20b-a90398dc72f1"
+      },
+      {
+        "identifier": "e9c40744-2fd9-3580-9f61-3828f822902a",
+        "instanceIdentifier": "0defa4bb-01a2-1000-229d-e275c4a21bf8",
+        "name": "",
+        "source": {
+          "id": "9b2aacf2-3002-3064-ae9c-bd5686c75f1a",
+          "type": "PROCESSOR",
+          "groupId": "192778e2-6863-3435-a20b-a90398dc72f1",
+          "name": "ConsumeElasticsearch",
+          "comments": "",
+          "instanceIdentifier": "0dd53547-01a2-1000-010c-ed0f9d77c13c"
+        },
+        "destination": {
+          "id": "293023e9-d5ab-3a5b-8183-a9a0c74b59d7",
+          "type": "FUNNEL",
+          "groupId": "192778e2-6863-3435-a20b-a90398dc72f1",
+          "name": "Funnel",
+          "comments": "",
+          "instanceIdentifier": "0def8af8-01a2-1000-35f8-b6bd18059ea3"
+        },
+        "labelIndex": 0,
+        "zIndex": 3,
+        "selectedRelationships": [
+          "failure"
+        ],
+        "backPressureObjectThreshold": 10000,
+        "backPressureDataSizeThreshold": "1 GB",
+        "flowFileExpiration": "0 sec",
+        "prioritizers": [],
+        "bends": [],
+        "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+        "partitioningAttribute": "",
+        "loadBalanceCompression": "DO_NOT_COMPRESS",
+        "componentType": "CONNECTION",
+        "groupIdentifier": "192778e2-6863-3435-a20b-a90398dc72f1"
+      },
+      {
+        "identifier": "e5b061ab-127d-3c2b-aa32-0ed10d82a12b",
+        "instanceIdentifier": "0def69af-01a2-1000-f22a-aec0ea6e9af7",
+        "name": "",
+        "source": {
+          "id": "ce00204f-9c59-3bdf-9015-883cf4636984",
+          "type": "PROCESSOR",
+          "groupId": "192778e2-6863-3435-a20b-a90398dc72f1",
+          "name": "OmopNoteNlpLoader",
+          "comments": "",
+          "instanceIdentifier": "0ddbd969-01a2-1000-2d60-dc090b7f9c10"
+        },
+        "destination": {
+          "id": "af9f8d98-da7a-3c24-bae5-4345c2f78f18",
+          "type": "FUNNEL",
+          "groupId": "192778e2-6863-3435-a20b-a90398dc72f1",
+          "name": "Funnel",
+          "comments": "",
+          "instanceIdentifier": "0def515b-01a2-1000-f4e2-d83e6378b806"
+        },
+        "labelIndex": 0,
+        "zIndex": 2,
+        "selectedRelationships": [
+          "failure"
+        ],
+        "backPressureObjectThreshold": 10000,
+        "backPressureDataSizeThreshold": "1 GB",
+        "flowFileExpiration": "0 sec",
+        "prioritizers": [],
+        "bends": [],
+        "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+        "partitioningAttribute": "",
+        "loadBalanceCompression": "DO_NOT_COMPRESS",
+        "componentType": "CONNECTION",
+        "groupIdentifier": "192778e2-6863-3435-a20b-a90398dc72f1"
+      }
+    ],
+    "labels": [],
+    "funnels": [
+      {
+        "identifier": "293023e9-d5ab-3a5b-8183-a9a0c74b59d7",
+        "instanceIdentifier": "0def8af8-01a2-1000-35f8-b6bd18059ea3",
+        "position": {
+          "x": 464.0,
+          "y": -320.0
+        },
+        "componentType": "FUNNEL",
+        "groupIdentifier": "192778e2-6863-3435-a20b-a90398dc72f1"
+      },
+      {
+        "identifier": "af9f8d98-da7a-3c24-bae5-4345c2f78f18",
+        "instanceIdentifier": "0def515b-01a2-1000-f4e2-d83e6378b806",
+        "position": {
+          "x": 400.0,
+          "y": -56.0
+        },
+        "componentType": "FUNNEL",
+        "groupIdentifier": "192778e2-6863-3435-a20b-a90398dc72f1"
+      }
+    ],
+    "controllerServices": [
+      {
+        "identifier": "afaa7c3b-be4a-326e-ab05-018f26660913",
+        "instanceIdentifier": "9c8d3579-019d-1000-fda2-82ab0e5806fa",
+        "name": "ElasticSearchClientServiceImpl - CogStack ES cluster",
+        "comments": "",
+        "type": "org.apache.nifi.elasticsearch.ElasticSearchClientServiceImpl",
+        "bundle": {
+          "group": "org.apache.nifi",
+          "artifact": "nifi-elasticsearch-client-service-nar",
+          "version": "2.7.2"
+        },
+        "properties": {
+          "Sniffer Request Timeout": "1 sec",
+          "Connect Timeout": "5000",
+          "HTTP Hosts": "https://elasticsearch-1:9200,https://elasticsearch-2:9200",
+          "Path Prefix": null,
+          "API Key ID": null,
+          "Enable Compression": "false",
+          "Read Timeout": "60000",
+          "Sniff on Failure": "false",
+          "Sniffer Failure Delay": "1 min",
+          "OAuth2 Access Token Provider": null,
+          "Suppress Null and Empty Values": "always-suppress",
+          "Node Selector": "ANY",
+          "Proxy Configuration Service": null,
+          "Strict Deprecation": "false",
+          "Sniff Cluster Nodes": "false",
+          "SSL Context Service": "8961ffb0-ca03-3496-8303-088a92e16170",
+          "Send Meta Header": "true",
+          "Username": "admin",
+          "Authorization Scheme": "BASIC",
+          "Sniffer Interval": "5 mins",
+          "Run As User": null,
+          "Character Set": "UTF-8"
+        },
+        "propertyDescriptors": {
+          "Sniffer Request Timeout": {
+            "name": "Sniffer Request Timeout",
+            "displayName": "Sniffer Request Timeout",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Connect Timeout": {
+            "name": "Connect Timeout",
+            "displayName": "Connect Timeout",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "API Key ID": {
+            "name": "API Key ID",
+            "displayName": "API Key ID",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Enable Compression": {
+            "name": "Enable Compression",
+            "displayName": "Enable Compression",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Sniff on Failure": {
+            "name": "Sniff on Failure",
+            "displayName": "Sniff on Failure",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "OAuth2 Access Token Provider": {
+            "name": "OAuth2 Access Token Provider",
+            "displayName": "OAuth2 Access Token Provider",
+            "identifiesControllerService": true,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Node Selector": {
+            "name": "Node Selector",
+            "displayName": "Node Selector",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Proxy Configuration Service": {
+            "name": "Proxy Configuration Service",
+            "displayName": "Proxy Configuration Service",
+            "identifiesControllerService": true,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Strict Deprecation": {
+            "name": "Strict Deprecation",
+            "displayName": "Strict Deprecation",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "JWT Shared Secret": {
+            "name": "JWT Shared Secret",
+            "displayName": "JWT Shared Secret",
+            "identifiesControllerService": false,
+            "sensitive": true,
+            "dynamic": false
+          },
+          "API Key": {
+            "name": "API Key",
+            "displayName": "API Key",
+            "identifiesControllerService": false,
+            "sensitive": true,
+            "dynamic": false
+          },
+          "Send Meta Header": {
+            "name": "Send Meta Header",
+            "displayName": "Send Meta Header",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Authorization Scheme": {
+            "name": "Authorization Scheme",
+            "displayName": "Authorization Scheme",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Password": {
+            "name": "Password",
+            "displayName": "Password",
+            "identifiesControllerService": false,
+            "sensitive": true,
+            "dynamic": false
+          },
+          "HTTP Hosts": {
+            "name": "HTTP Hosts",
+            "displayName": "HTTP Hosts",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Path Prefix": {
+            "name": "Path Prefix",
+            "displayName": "Path Prefix",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Read Timeout": {
+            "name": "Read Timeout",
+            "displayName": "Read Timeout",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Sniffer Failure Delay": {
+            "name": "Sniffer Failure Delay",
+            "displayName": "Sniffer Failure Delay",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Suppress Null and Empty Values": {
+            "name": "Suppress Null and Empty Values",
+            "displayName": "Suppress Null and Empty Values",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Sniff Cluster Nodes": {
+            "name": "Sniff Cluster Nodes",
+            "displayName": "Sniff Cluster Nodes",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "SSL Context Service": {
+            "name": "SSL Context Service",
+            "displayName": "SSL Context Service",
+            "identifiesControllerService": true,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Username": {
+            "name": "Username",
+            "displayName": "Username",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Sniffer Interval": {
+            "name": "Sniffer Interval",
+            "displayName": "Sniffer Interval",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Run As User": {
+            "name": "Run As User",
+            "displayName": "Run As User",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Character Set": {
+            "name": "Character Set",
+            "displayName": "Character Set",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          }
+        },
+        "controllerServiceApis": [
+          {
+            "type": "org.apache.nifi.elasticsearch.ElasticSearchClientService",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-elasticsearch-client-service-api-nar",
+              "version": "2.7.2"
+            }
+          }
+        ],
+        "scheduledState": "DISABLED",
+        "bulletinLevel": "WARN",
+        "componentType": "CONTROLLER_SERVICE",
+        "groupIdentifier": "0da4302a-01a2-1000-0a2e-836de9854629"
+      },
+      {
+        "identifier": "8961ffb0-ca03-3496-8303-088a92e16170",
+        "instanceIdentifier": "9d49c0c4-019d-1000-53ea-b85953db9c8d",
+        "name": "StandardSSLContextService",
+        "comments": "",
+        "type": "org.apache.nifi.ssl.StandardSSLContextService",
+        "bundle": {
+          "group": "org.apache.nifi",
+          "artifact": "nifi-ssl-context-service-nar",
+          "version": "2.7.2"
+        },
+        "properties": {
+          "Truststore Type": "JKS",
+          "Keystore Type": "JKS",
+          "Truststore Filename": "/security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/elasticsearch-1-truststore.key",
+          "TLS Protocol": "TLS",
+          "Keystore Filename": "/security/certificates/elastic/opensearch/elasticsearch/elasticsearch-1/elasticsearch-1-keystore.jks"
+        },
+        "propertyDescriptors": {
+          "Truststore Type": {
+            "name": "Truststore Type",
+            "displayName": "Truststore Type",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Key Password": {
+            "name": "Key Password",
+            "displayName": "Key Password",
+            "identifiesControllerService": false,
+            "sensitive": true,
+            "dynamic": false
+          },
+          "Keystore Type": {
+            "name": "Keystore Type",
+            "displayName": "Keystore Type",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Truststore Filename": {
+            "name": "Truststore Filename",
+            "displayName": "Truststore Filename",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false,
+            "resourceDefinition": {
+              "cardinality": "SINGLE",
+              "resourceTypes": [
+                "FILE"
+              ]
+            }
+          },
+          "Keystore Password": {
+            "name": "Keystore Password",
+            "displayName": "Keystore Password",
+            "identifiesControllerService": false,
+            "sensitive": true,
+            "dynamic": false
+          },
+          "Truststore Password": {
+            "name": "Truststore Password",
+            "displayName": "Truststore Password",
+            "identifiesControllerService": false,
+            "sensitive": true,
+            "dynamic": false
+          },
+          "TLS Protocol": {
+            "name": "TLS Protocol",
+            "displayName": "TLS Protocol",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false
+          },
+          "Keystore Filename": {
+            "name": "Keystore Filename",
+            "displayName": "Keystore Filename",
+            "identifiesControllerService": false,
+            "sensitive": false,
+            "dynamic": false,
+            "resourceDefinition": {
+              "cardinality": "SINGLE",
+              "resourceTypes": [
+                "FILE"
+              ]
+            }
+          }
+        },
+        "controllerServiceApis": [
+          {
+            "type": "org.apache.nifi.ssl.SSLContextService",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-services-api-nar",
+              "version": "2.7.2"
+            }
+          },
+          {
+            "type": "org.apache.nifi.ssl.SSLContextProvider",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-services-api-nar",
+              "version": "2.7.2"
+            }
+          }
+        ],
+        "scheduledState": "DISABLED",
+        "bulletinLevel": "WARN",
+        "componentType": "CONTROLLER_SERVICE",
+        "groupIdentifier": "0da4302a-01a2-1000-0a2e-836de9854629"
+      }
+    ],
+    "defaultFlowFileExpiration": "0 sec",
+    "defaultBackPressureObjectThreshold": 10000,
+    "defaultBackPressureDataSizeThreshold": "1 GB",
+    "scheduledState": "ENABLED",
+    "executionEngine": "INHERITED",
+    "maxConcurrentTasks": 1,
+    "statelessFlowTimeout": "1 min",
+    "flowFileConcurrency": "UNBOUNDED",
+    "flowFileOutboundPolicy": "STREAM_WHEN_AVAILABLE",
+    "componentType": "PROCESS_GROUP"
+  },
+  "externalControllerServices": {},
+  "parameterContexts": {},
+  "flowEncodingVersion": "1.0",
+  "parameterProviders": {},
+  "latest": false
+}
