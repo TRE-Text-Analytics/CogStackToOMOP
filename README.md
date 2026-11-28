@@ -2,6 +2,8 @@
 
 **Tested with:** NiFi 2.7.2 in the `cogstacksystems/cogstack-nifi` image, Python 3.11, OpenSearch, and a CogStack-NiFi checkout whose `deploy/Makefile` has `start-data-infra` (and no `init-security` targets). The data is MIMIC-IV discharge notes, which you need your own PhysioNet credentialed access to use; this repository contains no MIMIC data.
 
+**Want a ready-made stack?** Team members with access can clone the private [cogstack_quick_start](https://github.com/TRE-Text-Analytics/cogstack_quick_start) repository. It's a copy of the TRExt test installation with these five workflows, their files, and demo configuration already in place. Everyone else can follow this guide with their own CogStack-NiFi checkout. *(If the link shows "404", you don't have access; ask the TRExt team)*
+
 **In this repository:**
 
 ```
